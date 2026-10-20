@@ -16,13 +16,16 @@
         <package android:name="com.android.vending" />
     </queries>
 
+    <!-- The self-hosted server starts on a plain http:// LAN address; the
+         Server screen can still point at an https:// deployment later. -->
     <application
         android:name=".HappyApplication"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Happy">
+        android:theme="@style/Theme.Happy"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
