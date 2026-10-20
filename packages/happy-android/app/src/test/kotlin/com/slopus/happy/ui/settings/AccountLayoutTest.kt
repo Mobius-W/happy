@@ -22,8 +22,6 @@ import com.slopus.happy.model.GitHubProfile
 import androidx.compose.ui.unit.dp
 import com.slopus.happy.model.ImageRef
 import com.slopus.happy.model.Profile
-import com.slopus.happy.model.settings.PushPermission
-import com.slopus.happy.model.settings.PushToken
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.slopus.happy.ui.PHONE
 import com.slopus.happy.ui.assertDp
@@ -89,8 +87,6 @@ class AccountLayoutTest {
         connectedServices = listOf("anthropic", "openai", "unknown-service"),
     )
 
-    private val token = PushToken(id = "pt1", token = "ExponentPushToken[abcdefghijklmnop]", createdAt = 0, updatedAt = 0)
-
     @Test
     fun accountProfileAndServicesDisconnectAfterConfirming() {
         val disconnected = mutableListOf<String>()
@@ -121,27 +117,6 @@ class AccountLayoutTest {
         }
         rule.onAllNodesWithText("PROFILE").assertCountEquals(0)
         rule.onAllNodesWithText("CONNECTED ACCOUNTS").assertCountEquals(0)
-        rule.onNodeWithText("No registered push tokens").performScrollTo().assertIsDisplayed()
-        rule.onNodeWithText("REGISTERED TOKENS (0)").performScrollTo().assertIsDisplayed()
-    }
-
-    @Test
-    fun accountPushRowsWithoutPush() {
-        val deleted = mutableListOf<String>()
-        rule.setHappyContent {
-            AccountScreen(
-                anonId = null, publicId = null, formattedSecretKey = "",
-                analyticsOptOut = false, onAnalyticsOptOutChange = {}, onLogout = {}, onBack = {},
-                push = PushState(permission = PushPermission.Undetermined, tokens = listOf(token)),
-                onDeletePushToken = { deleted += it.id },
-            )
-        }
-        rule.onNodeWithText("Not requested").performScrollTo().assertIsDisplayed()
-        rule.onNodeWithText("iOS has stopped prompting. Open system settings to enable notifications again.").performScrollTo().assertIsDisplayed()
-        rule.onNodeWithText("abcdef…klmnop").performScrollTo().performClick()
-        rule.onNodeWithText("Remove abcdef…klmnop from your account?").assertIsDisplayed()
-        rule.onNodeWithText("Delete").performClick()
-        assertEquals(listOf("pt1"), deleted)
     }
 
     @Test

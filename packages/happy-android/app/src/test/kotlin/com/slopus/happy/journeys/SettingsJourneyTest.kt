@@ -1,6 +1,5 @@
 package com.slopus.happy.journeys
 
-import android.content.Context
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
@@ -10,13 +9,8 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.slopus.happy.AppGraph
-import com.slopus.happy.push.ExpoPushTokenClient
-import com.slopus.happy.push.PushApi
-import com.slopus.happy.push.PushRegistrar
-import com.slopus.happy.push.RegisteredPushTokenStore
 import com.slopus.happy.ui.HappyApp
 import com.slopus.happy.ui.PHONE
 import com.slopus.happy.ui.assertActionsLabelled
@@ -29,10 +23,8 @@ import com.slopus.happy.ui.node
 import com.slopus.happy.ui.settings.SettingsTags
 import com.slopus.happy.ui.theme.ThemePreference
 import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -44,8 +36,7 @@ import org.robolectric.annotation.GraphicsMode
  * Journey 5, Settings and back: Dark theme, Pixelated avatars, Russian and
  * developer mode, each set where Settings puts it and each holding on Home,
  * in the chat and in Settings; the account's settings reach the server.
- * Logout then drops this phone's push token on the server and wipes the
- * account, back to Welcome in the device's language.
+ * Logout then wipes the account, back to Welcome in the device's language.
  */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -77,12 +68,6 @@ class SettingsJourneyTest {
         journey.session("s1", updatedAt = 100, title = "Settings chat")
         graph = journey.graph()
         journey.signIn(graph)
-        // HappyApplication's hook, over this graph: logout drops this phone's registered token.
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val tokens = RegisteredPushTokenStore(context.getSharedPreferences(RegisteredPushTokenStore.PREFS_NAME, Context.MODE_PRIVATE))
-        tokens.save("ExponentPushToken[phone]")
-        val registrar = PushRegistrar({ null }, ExpoPushTokenClient(OkHttpClient()), PushApi(graph.http), tokens, { "id" }, "com.slopus.happy.dev")
-        graph.beforeLogout { registrar.unregisterOnLogout(it) }
         rule.setContent { HappyApp(graph, onDarkThemeChange = { dark = it }) }
         rule.waitFor(FlatRowTags.ROW)
         assertEquals(false, dark)
@@ -140,8 +125,6 @@ class SettingsJourneyTest {
         dialogButton("Выйти").performClick()
         // The language was the account's setting: Welcome is back in the device's, as after happy-app's reload.
         rule.waitForText("Create account")
-        rule.waitUntil(10_000) { server.requestsTo("/v1/push-tokens/ExponentPushToken%5Bphone%5D").any { it.method == "DELETE" } }
-        assertNull(tokens.load())
         assertNull(graph.store.profile())
         assertTrue(graph.store.sessions().isEmpty())
         assertEquals(ThemePreference.Adaptive, graph.localSettings.themePreference.value)

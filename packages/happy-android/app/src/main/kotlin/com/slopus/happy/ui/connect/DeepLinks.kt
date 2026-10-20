@@ -21,8 +21,6 @@ import com.slopus.happy.ui.settings.AppearanceRoute
 import com.slopus.happy.ui.settings.ChangelogRoute
 import com.slopus.happy.ui.settings.ConnectClaudeRoute
 import com.slopus.happy.ui.settings.LanguageRoute
-import com.slopus.happy.ui.voice.VoiceSettingsRoute
-import com.slopus.happy.ui.voice.VoiceLanguageRoute
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -97,8 +95,6 @@ private fun route(segments: List<String>, rawQuery: String?): DeepLink? {
         listOf("settings", "appearance") -> screen(AppearanceRoute)
         listOf("settings", "agents") -> screen(AgentsRoute)
         listOf("settings", "language") -> screen(LanguageRoute)
-        listOf("settings", "voice") -> screen(VoiceSettingsRoute)
-        listOf("settings", "voice", "language") -> screen(VoiceLanguageRoute)
         listOf("settings", "connect", "claude") -> screen(ConnectClaudeRoute)
         listOf("server") -> signedOut(ServerRoute)
         listOf("restore") -> signedOut(RestoreRoute)

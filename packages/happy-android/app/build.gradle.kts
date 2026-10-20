@@ -32,12 +32,6 @@ val buildCommitSha = providers.environmentVariable("HAPPY_BUILD_COMMIT_SHA").orN
 val buildCommitTimestamp = providers.environmentVariable("HAPPY_BUILD_COMMIT_TIMESTAMP").orNull
     ?: git("show", "-s", "--format=%cI", buildCommitSha ?: "HEAD")
 
-// Same public SDK key as happy-app. Supply it at build time; local builds
-// without a key keep purchases unavailable, without configuring an anonymous user.
-val revenueCatGoogleKey = providers.environmentVariable("EXPO_PUBLIC_REVENUE_CAT_GOOGLE").orNull
-    ?.takeIf { it.isNotBlank() }
-    ?: providers.gradleProperty("happy.revenueCatGoogleKey").orNull.orEmpty()
-
 // Versions follow happy-app (app.config.js, eas.json): versionName is the
 // app's `version`, read from app.config.js so the two never drift; versionCode
 // is EAS's remote, auto-incremented build number, which a store build must
@@ -91,12 +85,6 @@ android {
         versionName = versionNameValue
 
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://api.cluster-fluster.com\"")
-        buildConfigField("String", "REVENUE_CAT_GOOGLE_KEY", groovy.json.JsonOutput.toJson(revenueCatGoogleKey))
-        // All three RN variants currently use productionElevenLabsAgentId.
-        val voiceAgentId = Regex("""const productionElevenLabsAgentId = ['"]([^'"]+)['"]""")
-            .find(providers.fileContents(layout.projectDirectory.file("../../happy-app/app.config.js")).asText.get())
-            ?.groupValues?.get(1) ?: error("app.config.js has no elevenLabsAgentId")
-        buildConfigField("String", "ELEVENLABS_AGENT_ID", "\"$voiceAgentId\"")
         buildConfigField("String", "BUILD_COMMIT_SHA", buildCommitSha?.let { "\"$it\"" } ?: "null")
         buildConfigField("String", "BUILD_COMMIT_TIMESTAMP", buildCommitTimestamp?.let { "\"$it\"" } ?: "null")
     }
@@ -181,33 +169,6 @@ android {
     }
 }
 
-// Firebase without the google-services plugin, so a build without a
-// google-services.json still works (push then reports unsupported). The
-// file is app/google-services.json, else happy-app's committed one (same
-// Firebase project and application ids). Each variant gets the resources
-// the plugin would generate for the client whose package name is its
-// application id; FirebaseInitProvider reads them at startup.
-val googleServices: Map<*, *>? = listOf(file("google-services.json"), file("../../happy-app/google-services.json"))
-    .firstOrNull { it.exists() }
-    ?.let { groovy.json.JsonSlurper().parse(it) as Map<*, *> }
-
-fun firebaseResources(applicationId: String): Map<String, String> {
-    val json = googleServices ?: return emptyMap()
-    val project = json["project_info"] as Map<*, *>
-    val client = (json["client"] as List<*>).map { it as Map<*, *> }.firstOrNull {
-        ((it["client_info"] as Map<*, *>)["android_client_info"] as Map<*, *>)["package_name"] == applicationId
-    } ?: return emptyMap()
-    val apiKey = ((client["api_key"] as List<*>).firstOrNull() as Map<*, *>?)?.get("current_key") as String?
-    return listOfNotNull(
-        "google_app_id" to (client["client_info"] as Map<*, *>)["mobilesdk_app_id"] as String,
-        "gcm_defaultSenderId" to project["project_number"] as String,
-        (project["project_id"] as String?)?.let { "project_id" to it },
-        (project["storage_bucket"] as String?)?.let { "google_storage_bucket" to it },
-        apiKey?.let { "google_api_key" to it },
-        apiKey?.let { "google_crash_reporting_api_key" to it },
-    ).toMap()
-}
-
 // A signed store build with the default versionCode would collide with every
 // earlier upload: refuse it rather than find out at the Play console.
 // The check runs first in the variant's build (pre<Variant>Build), not after R8.
@@ -226,11 +187,7 @@ tasks.configureEach {
 
 androidComponents {
     onVariants { variant ->
-        val applicationId = applicationIds.getValue(requireNotNull(variant.buildType))
-        variant.applicationId.set(applicationId)
-        firebaseResources(applicationId).forEach { (name, value) ->
-            variant.resValues.put(variant.makeResValueKey("string", name), com.android.build.api.variant.ResValue(value))
-        }
+        variant.applicationId.set(applicationIds.getValue(requireNotNull(variant.buildType)))
     }
 }
 
@@ -239,8 +196,7 @@ androidComponents {
  * every `@Serializable` type in the sources keeps a `serializer()` by rule
  * (Navigation's routes and reified decoding look it up reflectively), the
  * manifest's own components survive, and the merged manifest still has the
- * Play Store `<queries>` entry, the App Link, the FCM service and the
- * default notification channel. assembleRelease runs it.
+ * Play Store `<queries>` entry and the App Link. assembleRelease runs it.
  */
 abstract class VerifyReleaseKeeps : DefaultTask() {
     @get:InputFile abstract val seeds: RegularFileProperty
@@ -283,18 +239,8 @@ abstract class VerifyReleaseKeeps : DefaultTask() {
         if (activity == null || !Regex("""autoVerify="true"[\s\S]*?android:host="app\.happy\.engineering"""").containsMatchIn(activity)) {
             problems += "MainActivity lost the verified App Link for app.happy.engineering"
         }
-        val messaging = component("service", "com.slopus.happy.push.HappyMessagingService")
-        if (messaging == null || "com.google.firebase.MESSAGING_EVENT" !in messaging || "android:exported=\"false\"" !in messaging) {
-            problems += "HappyMessagingService is missing, not on MESSAGING_EVENT, or exported"
-        }
         val receiver = component("receiver", "com.slopus.happy.push.BackgroundSendReceiver")
         if (receiver == null || "android:exported=\"false\"" !in receiver) problems += "BackgroundSendReceiver is missing or exported"
-        val channel = Regex("""const val DEFAULT = "([^"]+)"""").find(
-            sources.files.firstOrNull { it.name == "PushNotifications.kt" }?.readText().orEmpty(),
-        )?.groupValues?.get(1)
-        if (channel == null || !Regex("""default_notification_channel_id"\s+android:value="$channel"""").containsMatchIn(xml)) {
-            problems += "FCM's default_notification_channel_id is not NotificationChannels.DEFAULT ($channel)"
-        }
 
         report.get().asFile.writeText(
             if (problems.isEmpty()) "ok: ${serializable.size} serializable types, manifest checked\n" else problems.joinToString("\n"),
@@ -339,7 +285,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
-    implementation(project(":elevenlabs"))
 
     // QR codes (AGENTS.md "QR codes"): Google Code Scanner reads them, as
     // expo-camera's launchScanner does on Android; ZXing's encoder draws them.
@@ -349,12 +294,8 @@ dependencies {
     // The review ask (utils/requestReview.ts): expo-store-review's Play in-app review.
     implementation(libs.play.review)
 
-    // Push (AGENTS.md "Push"): FCM, configured from google-services.json when it is there.
-    implementation(libs.firebase.messaging)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
-    implementation(libs.revenuecat.purchases)
-    implementation(libs.revenuecat.ui)
 
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

@@ -157,10 +157,7 @@ fun SettingsScreen(
     onClaude: () -> Unit = {},
     onGitHub: () -> Unit = {},
     onAgents: () -> Unit = {},
-    onVoice: () -> Unit = {},
     onWhatsNew: () -> Unit = {},
-    isPro: Boolean = false,
-    onSupport: () -> Unit = {},
     /** A tap on Version; ten in a row toggle developer mode (useMultiClick). */
     onVersion: () -> Unit = {},
     avatar: @Composable (Profile, Dp) -> Unit = { p, size -> ProfileAvatar(p, size) },
@@ -234,17 +231,6 @@ fun SettingsScreen(
                 )
             }
 
-            ItemGroup {
-                Item(
-                    title = stringResource(R.string.settings_support_us),
-                    subtitle = stringResource(if (isPro) R.string.settings_support_us_subtitle_pro else R.string.settings_support_us_subtitle),
-                    icon = { ItemIcon(Ionicon.Heart, SettingsSpec.red) },
-                    onClick = if (isPro) null else onSupport,
-                    showChevron = false,
-                    modifier = Modifier.testTag(SettingsTags.SUPPORT),
-                )
-            }
-
             ItemGroup(title = stringResource(R.string.settings_connected_accounts)) {
                 Item(
                     title = "Claude Code",
@@ -284,12 +270,6 @@ fun SettingsScreen(
                     subtitle = stringResource(R.string.settings_appearance_subtitle),
                     icon = { ItemIcon(Ionicon.ColorPaletteOutline, SettingsSpec.indigo) },
                     onClick = onAppearance,
-                )
-                Item(
-                    title = stringResource(R.string.settings_voice_assistant),
-                    subtitle = stringResource(R.string.settings_voice_assistant_subtitle),
-                    icon = { ItemIcon(Ionicon.MicOutline, Color(0xFF34C759)) },
-                    onClick = onVoice,
                 )
                 Item(
                     title = stringResource(R.string.settings_agents),

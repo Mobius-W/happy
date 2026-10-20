@@ -1,15 +1,7 @@
 package com.slopus.happy.ui.settings
 
 import android.content.ActivityNotFoundException
-import android.os.Build
-import android.provider.Settings
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalResources
-import com.slopus.happy.model.settings.PushText
-import com.slopus.happy.model.settings.PushTokensApi
-import com.slopus.happy.push.rememberPushRegistration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
@@ -18,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
@@ -33,7 +26,6 @@ import com.slopus.happy.auth.AuthState
 import com.slopus.happy.model.Machine
 import com.slopus.happy.model.MachineChoice
 import com.slopus.happy.model.Profile
-import com.slopus.happy.payments.Paywall
 import com.slopus.happy.model.collectMachineChoices
 import kotlinx.coroutines.flow.MutableStateFlow
 import com.slopus.happy.model.settings.ConnectApi
@@ -52,8 +44,6 @@ import com.slopus.happy.ui.connect.rememberTerminalConnect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import com.slopus.happy.ui.voice.voiceRoutes
-import com.slopus.happy.ui.voice.VoiceSettingsRoute
 
 @Serializable data object AccountRoute
 @Serializable data object AppearanceRoute
@@ -64,7 +54,6 @@ import com.slopus.happy.ui.voice.VoiceSettingsRoute
 
 /** Settings and its screens. [SettingsRoute] is the entry point. */
 fun NavGraphBuilder.settingsRoutes(graph: AppGraph, nav: NavHostController) {
-    voiceRoutes(graph, nav)
     composable<SettingsRoute> { SettingsIndex(graph, nav) }
     composable<AccountRoute> { Account(graph, nav) }
     composable<AppearanceRoute> { Appearance(graph, nav) }
@@ -193,16 +182,6 @@ internal fun errorAlert(alerts: Alerts): (String?) -> Unit {
     return { message -> alerts.show(Alert(title, message ?: unknown, listOf(AlertButton(ok)))) }
 }
 
-/** Support us reports unavailable billing through the same localized alert as other settings actions. */
-@Composable
-internal fun rememberSupportAction(paywall: Paywall, onError: (String?) -> Unit): HappyAction {
-    val unavailable = stringResource(R.string.settings_support_unavailable)
-    return rememberHappyAction(onError) {
-        val result = paywall.present("voluntary_support")
-        if (!result.success) onError(unavailable)
-    }
-}
-
 @Composable
 private fun SettingsIndex(graph: AppGraph, nav: NavHostController) {
     val uriHandler = LocalUriHandler.current
@@ -210,8 +189,6 @@ private fun SettingsIndex(graph: AppGraph, nav: NavHostController) {
     val api = rememberConnectApi(graph)
     val alerts = remember { Alerts() }
     val onError = errorAlert(alerts)
-    val purchases by graph.purchases.purchases.collectAsStateWithLifecycle()
-    val support = rememberSupportAction(graph.purchases, onError)
 
     val cancel = stringResource(R.string.common_cancel)
     val disconnect = stringResource(R.string.modals_disconnect)
@@ -267,10 +244,7 @@ private fun SettingsIndex(graph: AppGraph, nav: NavHostController) {
         onAccount = { nav.navigate(AccountRoute) },
         onAppearance = { nav.navigate(AppearanceRoute) },
         onAgents = { nav.navigate(AgentsRoute) },
-        onVoice = { nav.navigate(VoiceSettingsRoute) },
         onWhatsNew = { nav.navigate(ChangelogRoute) },
-        isPro = BuildConfig.DEBUG || purchases.entitlements["pro"] == true,
-        onSupport = support::run,
         onOpenUrl = { url -> openExternalUrl(uriHandler, url) },
         onVersion = {
             if (versionClicks.click()) {
@@ -291,49 +265,16 @@ private fun Account(graph: AppGraph, nav: NavHostController) {
     val settings by graph.settings.settings.collectAsStateWithLifecycle()
     val profile by rememberProfile(graph)
     val api = rememberConnectApi(graph)
-    val tokensApi = remember(graph) { PushTokensApi(graph.http) { (graph.auth.state.value as? AuthState.SignedIn)?.credentials?.token } }
-    val pushRegistration = rememberPushRegistration(graph)
     val scope = rememberCoroutineScope()
     val alerts = remember { Alerts() }
     val onError = errorAlert(alerts)
     val errorTitle = stringResource(R.string.common_error)
-    val successTitle = stringResource(R.string.common_success)
     val ok = stringResource(R.string.common_ok)
     val resources = LocalResources.current
     fun showError(message: String) = alerts.show(Alert(errorTitle, message, listOf(AlertButton(ok))))
-    fun showSuccess(message: String) = alerts.show(Alert(successTitle, message, listOf(AlertButton(ok))))
 
-    val context = LocalContext.current
-    val (deviceLabel, appLabel) = remember {
-        PushText.deviceLabels(
-            // expo-device's deviceName: the user-set name, else the model.
-            deviceName = Settings.Global.getString(context.contentResolver, "device_name") ?: Build.MODEL,
-            modelName = Build.MODEL,
-            osVersion = Build.VERSION.RELEASE,
-            appVersion = BuildConfig.VERSION_NAME,
-            buildVersion = BuildConfig.VERSION_CODE.toString(),
-            emulator = Build.FINGERPRINT.contains("generic") || Build.HARDWARE.contains("ranchu"),
-        )
-    }
-    var push by remember { mutableStateOf(PushState(deviceLabel = deviceLabel, appLabel = appLabel)) }
     var disconnectingService by remember { mutableStateOf<String?>(null) }
     val link = rememberAccountLink(graph)
-
-    suspend fun loadPush(showErrors: Boolean = false) {
-        push = push.copy(loading = true)
-        try {
-            val tokens = tokensApi.list()
-            push = push.copy(tokens = tokens, permission = pushRegistration.permission(), currentToken = pushRegistration.currentToken())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            if (showErrors) showError("Failed to load push notification settings.")
-        } finally {
-            push = push.copy(loading = false)
-        }
-    }
-    // Loaded on every visit (useFocusEffect).
-    LaunchedEffect(Unit) { loadPush() }
 
     val disconnectGitHub = rememberHappyAction(onError) {
         api.disconnectGitHub()
@@ -364,67 +305,6 @@ private fun Account(graph: AppGraph, nav: NavHostController) {
                     showError(resources.getString(R.string.errors_disconnect_service_failed, name))
                 } finally {
                     disconnectingService = null
-                }
-            }
-        },
-        push = push,
-        onRequestPush = {
-            scope.launch {
-                push = push.copy(requesting = true)
-                try {
-                    val result = pushRegistration.requestPermissionOrOpenSettings()
-                    push = push.copy(permission = result.permission)
-                    if (result.granted) {
-                        pushRegistration.syncCurrentToken()
-                        loadPush()
-                        showSuccess("Push notifications are enabled for this device.")
-                    } else {
-                        loadPush()
-                        if (result.openedSettings) {
-                            alerts.show(Alert("Open Settings", "The system will not show the permission prompt again, so Happy opened Settings instead.", listOf(AlertButton(ok))))
-                        } else {
-                            showError("Push notification permission was not granted.")
-                        }
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    showError("Failed to request push notification permission.")
-                } finally {
-                    push = push.copy(requesting = false)
-                }
-            }
-        },
-        onRefreshPush = {
-            scope.launch {
-                push = push.copy(refreshing = true)
-                try {
-                    val result = pushRegistration.syncCurrentToken()
-                    push = push.copy(permission = result.permission)
-                    loadPush()
-                    if (result.permission.granted) showSuccess("This device push token was refreshed.")
-                    else showError("Push notifications are not enabled for this device yet.")
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    showError("Failed to refresh this device push token.")
-                } finally {
-                    push = push.copy(refreshing = false)
-                }
-            }
-        },
-        onDeletePushToken = { token ->
-            scope.launch {
-                push = push.copy(deletingToken = token.token)
-                try {
-                    pushRegistration.removeToken(token.token)
-                    loadPush()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    showError("Failed to delete push token.")
-                } finally {
-                    push = push.copy(deletingToken = null)
                 }
             }
         },
