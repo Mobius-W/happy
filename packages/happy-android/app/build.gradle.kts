@@ -32,6 +32,12 @@ val buildCommitSha = providers.environmentVariable("HAPPY_BUILD_COMMIT_SHA").orN
 val buildCommitTimestamp = providers.environmentVariable("HAPPY_BUILD_COMMIT_TIMESTAMP").orNull
     ?: git("show", "-s", "--format=%cI", buildCommitSha ?: "HEAD")
 
+// The server the app starts on; the in-app Server screen overrides it. This
+// lean fork defaults to the self-hosted LAN server.
+val defaultServerUrl = providers.environmentVariable("HAPPY_DEFAULT_SERVER_URL").orNull
+    ?: providers.gradleProperty("happy.defaultServerUrl").orNull
+    ?: "http://10.26.88.66:3005"
+
 // Versions follow happy-app (app.config.js, eas.json): versionName is the
 // app's `version`, read from app.config.js so the two never drift; versionCode
 // is EAS's remote, auto-incremented build number, which a store build must
@@ -84,7 +90,7 @@ android {
         versionCode = versionCodeValue ?: 1
         versionName = versionNameValue
 
-        buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://api.cluster-fluster.com\"")
+        buildConfigField("String", "DEFAULT_SERVER_URL", "\"$defaultServerUrl\"")
         buildConfigField("String", "BUILD_COMMIT_SHA", buildCommitSha?.let { "\"$it\"" } ?: "null")
         buildConfigField("String", "BUILD_COMMIT_TIMESTAMP", buildCommitTimestamp?.let { "\"$it\"" } ?: "null")
     }
